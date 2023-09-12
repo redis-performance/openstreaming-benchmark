@@ -27,6 +27,7 @@ go.work
 *.rdb
 
 # project outputs related
+openstream-benchmark
 openstream-benchmarks
 *.json
 

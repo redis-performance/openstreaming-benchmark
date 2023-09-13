@@ -25,7 +25,7 @@ all: test build
 
 build:
 	$(GOBUILD) \
-	-ldflags="-X 'main.GitSHA1=$(GIT_SHA)' -X 'main.GitDirty=$(GIT_DIRTY)'" .
+	-ldflags="-X 'cmd.GitSHA1=$(GIT_SHA)' -X 'cmd.GitDirty=$(GIT_DIRTY)'" .
 
 build-race:
 	$(GOBUILDRACE) \
@@ -59,7 +59,7 @@ release:
 	$(GOGET) github.com/mitchellh/gox
 	$(GOGET) github.com/tcnksm/ghr
 	GO111MODULE=on gox  -osarch ${OS_ARCHs} \
-	    -ldflags="-X 'main.GitSHA1=$(GIT_SHA)' -X 'main.GitDirty=$(GIT_DIRTY)'" \
+	    -ldflags="-X 'cmd.GitSHA1=$(GIT_SHA)' -X 'cmd.GitDirty=$(GIT_DIRTY)'" \
 	    -output "${DISTDIR}/openstream-benchmark_{{.OS}}_{{.Arch}}" .
 
 fmt:

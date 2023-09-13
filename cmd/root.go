@@ -16,7 +16,9 @@ limitations under the License.
 package cmd
 
 import (
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -33,7 +35,18 @@ This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	Run: func(cmd *cobra.Command, args []string) {
+		version, _ := cmd.Flags().GetBool("version")
+		git_sha := toolGitSHA1()
+		git_dirty_str := ""
+		if toolGitDirty() {
+			git_dirty_str = "-dirty"
+		}
+		if version {
+			fmt.Fprintf(os.Stdout, "openstream-benchmark (git_sha1:%s%s)\n", git_sha, git_dirty_str)
+			os.Exit(0)
+		}
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -49,10 +62,21 @@ func init() {
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.openstream-benchmark.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.PersistentFlags().String("h", "127.0.0.1", "Server hostname.")
+	rootCmd.PersistentFlags().Int("p", 6379, "Server port.")
+	rootCmd.PersistentFlags().Int64("rps", 0, "Max rps. If 0 no limit is applied and the DB is stressed up to maximum.")
+	rootCmd.PersistentFlags().Int64("rps-burst", 0, "Max rps burst. If 0 the allowed burst will be the ammount of clients.")
+	rootCmd.PersistentFlags().String("a", "", "Password for Redis Auth.")
+	rootCmd.PersistentFlags().Int64("random-seed", 12345, "random seed to be used.")
+	rootCmd.PersistentFlags().Uint64("c", 50, "number of clients.")
+	rootCmd.PersistentFlags().Uint64("r", 1000000, "keyspace length. The benchmark will expand the string __key__ inside an argument with a number in the specified range from 0 to keyspacelen-1. The substitution changes every time a command is executed.")
+	rootCmd.PersistentFlags().Uint64("d", 100, "Data size in bytes of the expanded string value sent in the message.")
+	rootCmd.PersistentFlags().Uint64("n", 10000000, "Total number of requests")
+	rootCmd.PersistentFlags().Bool("oss-cluster", false, "Enable OSS cluster mode.")
+	rootCmd.PersistentFlags().Duration("between-clients-duration", time.Millisecond*0, "Between each client creation, wait this time.")
+	rootCmd.PersistentFlags().Duration("test-time", time.Second*0, "test time in seconds.")
+	rootCmd.PersistentFlags().Bool("version", false, "Output version and exit")
+	rootCmd.PersistentFlags().Bool("verbose", false, "Output verbose info")
+	rootCmd.PersistentFlags().String("resp", "", "redis command response protocol (2 - RESP 2, 3 - RESP 3). If empty will not enforce it.")
+	rootCmd.PersistentFlags().String("nameserver", "", "the IP address of the DNS name server. The IP address can be an IPv4 or an IPv6 address. If empty will use the default host namserver.")
 }

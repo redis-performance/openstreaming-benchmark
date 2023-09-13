@@ -4,7 +4,9 @@ Copyright © 2023 Redis Performance Group performance <at> redis <dot> com
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"github.com/rueian/rueidis"
 
 	"github.com/spf13/cobra"
 )
@@ -20,6 +22,22 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		h, _ := cmd.Flags().GetString("h")
+		p, _ := cmd.Flags().GetInt("p")
+		a, _ := cmd.Flags().GetString("a")
+
+		initaddress := fmt.Sprintf("%s:%d", h, p)
+
+		client, err := rueidis.NewClient(rueidis.ClientOption{InitAddress: []string{initaddress}, Password: a, AlwaysPipelining: false, AlwaysRESP2: true})
+		if err != nil {
+			panic(err)
+		}
+		defer client.Close()
+
+		ctx := context.Background()
+		// SET key val NX
+		err = client.Do(ctx, client.B().Set().Key("key").Value("val").Nx().Build()).Error()
+
 		fmt.Println("producer called")
 	},
 }

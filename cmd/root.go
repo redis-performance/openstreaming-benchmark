@@ -26,13 +26,8 @@ import (
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "openstream-benchmark",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Make it easy to benchmark distributed streaming systems.",
+	Long:  `Make it easy to benchmark distributed streaming systems.`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
@@ -69,9 +64,10 @@ func init() {
 	rootCmd.PersistentFlags().String("a", "", "Password for Redis Auth.")
 	rootCmd.PersistentFlags().Int64("random-seed", 12345, "random seed to be used.")
 	rootCmd.PersistentFlags().Uint64("c", 50, "number of clients.")
-	rootCmd.PersistentFlags().Int64("keyspace-len", 10000, "number of streams.")
+	rootCmd.PersistentFlags().Int64("keyspace-len", 100, "number of streams.")
 	rootCmd.PersistentFlags().Int64("stream-maxlen", 1000000, "stream max length.")
-	rootCmd.PersistentFlags().Int64("stream-maxlen-expire-secs", 60, "If a stream reached the max length, we expire it after the provided amount of seconds.")
+	rootCmd.PersistentFlags().Uint64("consumers-per-stream", 5, "per stream consumer count.")
+	rootCmd.PersistentFlags().Int64("stream-maxlen-expire-secs", 60, "If a stream reached the max length, we expire it after the provided amount of seconds. If 0 will use DEL instead of expire.")
 	rootCmd.PersistentFlags().String("stream-prefix", "", "stream prefix.")
 	rootCmd.PersistentFlags().Int("d", 100, "Data size in bytes of the expanded string value sent in the message.")
 	rootCmd.PersistentFlags().Uint64("n", 10000000, "Total number of requests")

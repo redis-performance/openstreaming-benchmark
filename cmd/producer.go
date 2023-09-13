@@ -45,13 +45,8 @@ func stringWithCharset(length int, charset string) string {
 // producerCmd represents the producer command
 var producerCmd = &cobra.Command{
 	Use:   "producer",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Producer workload doing the actual data ingestion of streams.",
+	Long:  `.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		host, _ := cmd.Flags().GetString("h")
 		port, _ := cmd.Flags().GetInt("p")
@@ -69,6 +64,10 @@ to quickly create a Cobra application.`,
 		nameserver, _ := cmd.Flags().GetString("nameserver")
 		streamPrefix, _ := cmd.Flags().GetString("stream-prefix")
 		betweenClientsDelay, _ := cmd.Flags().GetDuration("between-clients-duration")
+
+		if nClients > uint64(keyspaceLen) {
+			log.Fatalf("The number of clients needs to be smaller or equal to the number of streams")
+		}
 
 		ips := make([]net.IP, 0)
 		if nameserver != "" {
@@ -203,17 +202,22 @@ func benchmarkRoutine(client rueidis.Client, streamPrefix, value string, datapoi
 				counter, err = client.Do(ctx, client.B().Xlen().Key(keyname).Build()).AsInt64()
 				if counter > 0 {
 					counter++
-					//fmt.Printf("The stream %s already contained data. starting by length %d\n", keyname, counter)
 				}
 			}
 			if counter >= streamMaxlen {
-				var ttl int64 = -1
-				cc := client.Do(ctx, client.B().Ttl().Key(keyname).Build())
-				ttl, err = cc.AsInt64()
-				if ttl < 0 {
-					fmt.Printf("Expiring %s in %d seconds given it surpasses stream max len %d\n", keyname, streamMaxlenExpireSeconds, streamMaxlen)
-					err = client.Do(ctx, client.B().Expire().Key(keyname).Seconds(streamMaxlenExpireSeconds).Build()).Error()
+				if streamMaxlenExpireSeconds == 0 {
+					err = client.Do(ctx, client.B().Del().Key(keyname).Build()).Error()
+					counter = 0
+				} else {
+					var ttl int64 = -1
+					cc := client.Do(ctx, client.B().Ttl().Key(keyname).Build())
+					ttl, err = cc.AsInt64()
+					if ttl < 0 {
+						//fmt.Printf("Expiring %s in %d seconds given it surpasses stream max len %d\n", keyname, streamMaxlenExpireSeconds, streamMaxlen)
+						err = client.Do(ctx, client.B().Expire().Key(keyname).Seconds(streamMaxlenExpireSeconds).Build()).Error()
+					}
 				}
+
 			}
 
 		}

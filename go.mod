@@ -1,4 +1,4 @@
-module github.com/redis-performance/openstream-benchmark
+module github.com/redis-performance/openstreaming-benchmark
 
 go 1.19
 

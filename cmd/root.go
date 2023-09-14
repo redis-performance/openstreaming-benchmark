@@ -25,7 +25,7 @@ import (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "openstream-benchmark",
+	Use:   "openstreaming-benchmark",
 	Short: "Make it easy to benchmark distributed streaming systems.",
 	Long:  `Make it easy to benchmark distributed streaming systems.`,
 	// Uncomment the following line if your bare application
@@ -38,7 +38,7 @@ var rootCmd = &cobra.Command{
 			git_dirty_str = "-dirty"
 		}
 		if version {
-			fmt.Fprintf(os.Stdout, "openstream-benchmark (git_sha1:%s%s)\n", git_sha, git_dirty_str)
+			fmt.Fprintf(os.Stdout, "openstreaming-benchmark (git_sha1:%s%s)\n", git_sha, git_dirty_str)
 			os.Exit(0)
 		}
 	},

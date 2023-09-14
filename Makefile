@@ -60,7 +60,7 @@ release:
 	$(GOGET) github.com/tcnksm/ghr
 	GO111MODULE=on gox  -osarch ${OS_ARCHs} \
 	    -ldflags="-X 'cmd.GitSHA1=$(GIT_SHA)' -X 'cmd.GitDirty=$(GIT_DIRTY)'" \
-	    -output "${DISTDIR}/openstream-benchmark_{{.OS}}_{{.Arch}}" .
+	    -output "${DISTDIR}/openstreaming-benchmark_{{.OS}}_{{.Arch}}" .
 
 fmt:
 	$(GOFMT) ./...

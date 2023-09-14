@@ -15,7 +15,7 @@ limitations under the License.
 */
 package main
 
-import "github.com/redis-performance/openstream-benchmark/cmd"
+import "github.com/redis-performance/openstreaming-benchmark/cmd"
 
 func main() {
 	cmd.Execute()

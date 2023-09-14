@@ -95,8 +95,7 @@ var producerCmd = &cobra.Command{
 		// a WaitGroup for the goroutines to tell us they've stopped
 		wg := sync.WaitGroup{}
 
-		fmt.Printf("Using random seed: %d\n", seed)
-		randSource := rand.New(rand.NewSource(seed))
+		fmt.Printf("Using random seed: %d. Each client will have seed of %d+<client id>\n", seed, seed)
 
 		var requestRate = Inf
 		var requestBurst = rps
@@ -119,6 +118,7 @@ var producerCmd = &cobra.Command{
 		value := stringWithCharset(dataLen, charset)
 		datapointsChan := make(chan datapoint, numberRequests)
 		for clientId := 0; uint64(clientId) < nClients; clientId++ {
+			randSource := rand.New(rand.NewSource(seed + int64(clientId)))
 			clientStreamStart := (clientId * streamsPerClient) + 1
 			clientStreamEnd := (clientId + 1) * streamsPerClient
 			gen := generator.NewZipfianWithRange(int64(clientStreamStart), int64(clientStreamEnd), float64(0.99))

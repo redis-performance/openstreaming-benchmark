@@ -25,7 +25,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           goos: ${{ matrix.goos }}
           goarch: ${{ matrix.goarch }}
-          binary_name: "openstream-benchmark"
+          binary_name: "openstreaming-benchmark"
           sha256sum: true
-          asset_name: openstream-benchmark-${{ matrix.goos }}-${{ matrix.goarch }}
+          asset_name: openstreaming-benchmark-${{ matrix.goos }}-${{ matrix.goarch }}
           build_command: "make build"

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/HdrHistogram/hdrhistogram-go"
 	"github.com/rueian/rueidis"
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	"log"
 	"math/rand"
@@ -67,6 +68,10 @@ var consumerCmd = &cobra.Command{
 		client_update_tick := 1
 		latencies = hdrhistogram.New(1, 90000000, 3)
 		datapointsChan := make(chan datapoint, numberRequests)
+		progressSize := keyspaceLen * int64(nConsumersPerStream)
+		fmt.Printf("Setting up the consumer groups. On total we will have %d connections.\n", progressSize)
+		bar := progressbar.Default(progressSize)
+
 		for streamId := 1; int64(streamId) <= keyspaceLen; streamId++ {
 			ctx := context.Background()
 			connectionStr := fmt.Sprintf("%s:%d", ips[rand.Int63n(int64(len(ips)))], port)
@@ -100,6 +105,7 @@ var consumerCmd = &cobra.Command{
 				err = client.Do(ctx, client.B().XgroupCreateconsumer().Key(keyname).Group(groupname).Consumer(consumername).Build()).Error()
 				wg.Add(1)
 				go benchmarkConsumerRoutine(client, datapointsChan, &wg, keyname, groupname, consumername)
+				bar.Add(1)
 			}
 
 			// delay the creation for each additional client

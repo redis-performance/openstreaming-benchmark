@@ -12,6 +12,8 @@ import (
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	"math/rand"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"sync"
@@ -40,6 +42,7 @@ var consumerCmd = &cobra.Command{
 		streamPrefix, _ := cmd.Flags().GetString("stream-prefix")
 		betweenClientsDelay, _ := cmd.Flags().GetDuration("between-clients-duration")
 		clientKeepAlive, _ := cmd.Flags().GetDuration("client-keep-alive-time")
+		pprofPort, _ := cmd.Flags().GetInt64("pprof-port")
 
 		ctx := context.Background()
 		ips := resolveHostnames(nameserver, host, ctx)
@@ -47,7 +50,9 @@ var consumerCmd = &cobra.Command{
 		//stopChan := make(chan struct{})
 		// a WaitGroup for the goroutines to tell us they've stopped
 		wg := sync.WaitGroup{}
-
+		go func() {
+			http.ListenAndServe(fmt.Sprintf(":%d", pprofPort), nil)
+		}()
 		fmt.Printf("Using random seed: %d\n", seed)
 
 		client_update_tick := 1

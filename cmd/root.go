@@ -70,6 +70,7 @@ func init() {
 	rootCmd.PersistentFlags().String("stream-prefix", "", "stream prefix.")
 	rootCmd.PersistentFlags().Int("d", 100, "Data size in bytes of the expanded string value sent in the message.")
 	rootCmd.PersistentFlags().Uint64("n", 10000000, "Total number of requests")
+	rootCmd.PersistentFlags().Int64("pprof-port", 8080, "pprof port.")
 	rootCmd.PersistentFlags().Bool("oss-cluster", false, "Enable OSS cluster mode.")
 	rootCmd.PersistentFlags().Duration("between-clients-duration", time.Millisecond*0, "Between each client creation, wait this time.")
 	rootCmd.PersistentFlags().Duration("test-time", time.Second*0, "test time in seconds.")

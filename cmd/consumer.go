@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/HdrHistogram/hdrhistogram-go"
+	"github.com/pingcap/go-ycsb/pkg/generator"
 	"github.com/rueian/rueidis"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
@@ -52,11 +53,12 @@ var consumerCmd = &cobra.Command{
 		client_update_tick := 1
 		latencies = hdrhistogram.New(1, 90000000, 3)
 		latenciesTick = hdrhistogram.New(1, 90000000, 3)
-
+		gen := generator.NewZipfianWithRange(int64(nConsumersPerStreamMin), int64(nConsumersPerStreamMax), float64(0.99))
+		randSource := rand.New(rand.NewSource(seed))
 		consumersPerStream := make([]int, keyspaceLen, keyspaceLen)
 		progressSize := 0
 		for i := 0; int64(i) < keyspaceLen; i++ {
-			consumersPerStream[i] = int(uint64(rand.Intn(int(nConsumersPerStreamMax-nConsumersPerStreamMin))) + nConsumersPerStreamMin)
+			consumersPerStream[i] = int(gen.Next(randSource))
 			progressSize += consumersPerStream[i]
 		}
 		datapointsChan := make(chan datapoint, numberRequests)
@@ -103,7 +105,8 @@ var consumerCmd = &cobra.Command{
 		endT := time.Now()
 		durationSetup := endT.Sub(startT)
 		fmt.Printf("Finished setting up the consumer groups after %f seconds.\n", durationSetup.Seconds())
-
+		fmt.Printf("Starting all consumer go-routines. On total we will have %d connections.\n", progressSize)
+		bar = progressbar.Default(int64(progressSize))
 		// listen for C-c
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, os.Interrupt)
@@ -139,16 +142,17 @@ var consumerCmd = &cobra.Command{
 				consumername := fmt.Sprintf("streamconsumer:%s:%d", groupname, consumerId)
 				wg.Add(1)
 				go benchmarkConsumerRoutine(client, c, datapointsChan, &wg, keyname, groupname, consumername, readBlockMs)
+				bar.Add(1)
 			}
 
 			// delay the creation for each additional client
 			time.Sleep(betweenClientsDelay)
 		}
-		endT = time.Now()
-
+		fmt.Printf("Finished starting all consumer go-routines.\n")
 		tick := time.NewTicker(time.Duration(client_update_tick) * time.Second)
 
 		closed, _, duration, totalMessages, messageRateTs, percentilesTs := updateCLI(tick, c, numberRequests, loop, datapointsChan)
+		endT = time.Now()
 		messageRate := float64(totalMessages) / float64(duration.Seconds())
 		avgMs := float64(latencies.Mean()) / 1000.0
 		p50IngestionMs := float64(latencies.ValueAtQuantile(50.0)) / 1000.0

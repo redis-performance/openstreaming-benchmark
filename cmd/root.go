@@ -66,7 +66,6 @@ func init() {
 	rootCmd.PersistentFlags().Uint64("c", 50, "number of clients.")
 	rootCmd.PersistentFlags().Int64("keyspace-len", 100, "number of streams.")
 	rootCmd.PersistentFlags().Int64("stream-maxlen", 1000000, "stream max length.")
-	rootCmd.PersistentFlags().Uint64("consumers-per-stream", 5, "per stream consumer count.")
 	rootCmd.PersistentFlags().Int64("stream-maxlen-expire-secs", 60, "If a stream reached the max length, we expire it after the provided amount of seconds. If 0 will use DEL instead of expire.")
 	rootCmd.PersistentFlags().String("stream-prefix", "", "stream prefix.")
 	rootCmd.PersistentFlags().Int("d", 100, "Data size in bytes of the expanded string value sent in the message.")

@@ -27,7 +27,8 @@ var consumerCmd = &cobra.Command{
 		jsonOutFile, _ := cmd.Flags().GetString("json-out-file")
 		port, _ := cmd.Flags().GetInt("p")
 		keyspaceLen, _ := cmd.Flags().GetInt64("keyspace-len")
-		nConsumersPerStream, _ := cmd.Flags().GetUint64("consumers-per-stream")
+		nConsumersPerStreamMax, _ := cmd.Flags().GetUint64("consumers-per-stream-max")
+		nConsumersPerStreamMin, _ := cmd.Flags().GetUint64("consumers-per-stream-min")
 		readBlockMs, _ := cmd.Flags().GetInt64("stream-read-block-ms")
 		numberRequests, _ := cmd.Flags().GetUint64("n")
 		auth, _ := cmd.Flags().GetString("a")
@@ -52,12 +53,18 @@ var consumerCmd = &cobra.Command{
 		latencies = hdrhistogram.New(1, 90000000, 3)
 		latenciesTick = hdrhistogram.New(1, 90000000, 3)
 
+		consumersPerStream := make([]int, keyspaceLen, keyspaceLen)
+		progressSize := 0
+		for i := 0; int64(i) < keyspaceLen; i++ {
+			consumersPerStream[i] = int(uint64(rand.Intn(int(nConsumersPerStreamMax-nConsumersPerStreamMin))) + nConsumersPerStreamMin)
+			progressSize += consumersPerStream[i]
+		}
 		datapointsChan := make(chan datapoint, numberRequests)
-		progressSize := keyspaceLen * int64(nConsumersPerStream)
 		fmt.Printf("Setting up the consumer groups. On total we will have %d connections.\n", progressSize)
-		bar := progressbar.Default(progressSize)
+		bar := progressbar.Default(int64(progressSize))
 		startT := time.Now()
 		for streamId := 1; int64(streamId) <= keyspaceLen; streamId++ {
+			consumersForStream := consumersPerStream[streamId-1]
 			ctx := context.Background()
 			connectionStr := fmt.Sprintf("%s:%d", ips[rand.Int63n(int64(len(ips)))], port)
 			keyname := fmt.Sprintf("%s%d", streamPrefix, streamId)
@@ -72,7 +79,7 @@ var consumerCmd = &cobra.Command{
 				AlwaysPipelining: false,
 				AlwaysRESP2:      true,
 				DisableCache:     true,
-				BlockingPoolSize: int(nConsumersPerStream),
+				BlockingPoolSize: int(consumersForStream),
 			}
 			clientOptions.Dialer.KeepAlive = clientKeepAlive
 			client, err := rueidis.NewClient(clientOptions)
@@ -86,7 +93,7 @@ var consumerCmd = &cobra.Command{
 			if err != nil {
 				panic(err)
 			}
-			for consumerId := 1; uint64(consumerId) <= nConsumersPerStream; consumerId++ {
+			for consumerId := 1; uint64(consumerId) <= uint64(consumersForStream); consumerId++ {
 				consumername := fmt.Sprintf("streamconsumer:%s:%d", groupname, consumerId)
 				err = client.Do(ctx, client.B().XgroupCreateconsumer().Key(keyname).Group(groupname).Consumer(consumername).Build()).Error()
 				bar.Add(1)
@@ -102,6 +109,7 @@ var consumerCmd = &cobra.Command{
 		signal.Notify(c, os.Interrupt)
 		startT = time.Now()
 		for streamId := 1; int64(streamId) <= keyspaceLen; streamId++ {
+			consumersForStream := consumersPerStream[streamId-1]
 			connectionStr := fmt.Sprintf("%s:%d", ips[rand.Int63n(int64(len(ips)))], port)
 			keyname := fmt.Sprintf("%s%d", streamPrefix, streamId)
 			groupname := fmt.Sprintf("streamgroup:%s%d", streamPrefix, streamId)
@@ -115,7 +123,7 @@ var consumerCmd = &cobra.Command{
 				AlwaysPipelining: false,
 				AlwaysRESP2:      true,
 				DisableCache:     true,
-				BlockingPoolSize: int(nConsumersPerStream),
+				BlockingPoolSize: int(consumersForStream),
 			}
 			clientOptions.Dialer.KeepAlive = clientKeepAlive
 			client, err := rueidis.NewClient(clientOptions)
@@ -127,7 +135,7 @@ var consumerCmd = &cobra.Command{
 			if err != nil {
 				panic(err)
 			}
-			for consumerId := 1; uint64(consumerId) <= nConsumersPerStream; consumerId++ {
+			for consumerId := 1; uint64(consumerId) <= uint64(consumersForStream); consumerId++ {
 				consumername := fmt.Sprintf("streamconsumer:%s:%d", groupname, consumerId)
 				wg.Add(1)
 				go benchmarkConsumerRoutine(client, c, datapointsChan, &wg, keyname, groupname, consumername, readBlockMs)
@@ -210,6 +218,8 @@ func init() {
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
 	consumerCmd.PersistentFlags().Int64("stream-read-block-ms", 30000, "Block the client for this amount of milliseconds.")
+	consumerCmd.PersistentFlags().Uint64("consumers-per-stream-min", 5, "per stream consumer count min.")
+	consumerCmd.PersistentFlags().Uint64("consumers-per-stream-max", 50, "per stream consumer count max.")
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:

@@ -36,6 +36,7 @@ var consumerCmd = &cobra.Command{
 		nameserver, _ := cmd.Flags().GetString("nameserver")
 		streamPrefix, _ := cmd.Flags().GetString("stream-prefix")
 		betweenClientsDelay, _ := cmd.Flags().GetDuration("between-clients-duration")
+		clientKeepAlive, _ := cmd.Flags().GetDuration("client-keep-alive-time")
 
 		ctx := context.Background()
 		ips := resolveHostnames(nameserver, host, ctx)
@@ -72,6 +73,7 @@ var consumerCmd = &cobra.Command{
 				DisableCache:     true,
 				BlockingPoolSize: int(nConsumersPerStream),
 			}
+			clientOptions.Dialer.KeepAlive = clientKeepAlive
 			client, err := rueidis.NewClient(clientOptions)
 			if err != nil {
 				panic(err)
@@ -114,6 +116,7 @@ var consumerCmd = &cobra.Command{
 				DisableCache:     true,
 				BlockingPoolSize: int(nConsumersPerStream),
 			}
+			clientOptions.Dialer.KeepAlive = clientKeepAlive
 			client, err := rueidis.NewClient(clientOptions)
 			if err != nil {
 				panic(err)

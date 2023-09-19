@@ -65,6 +65,7 @@ var producerCmd = &cobra.Command{
 		streamPrefix, _ := cmd.Flags().GetString("stream-prefix")
 		betweenClientsDelay, _ := cmd.Flags().GetDuration("between-clients-duration")
 		jsonOutFile, _ := cmd.Flags().GetString("json-out-file")
+		clientKeepAlive, _ := cmd.Flags().GetDuration("client-keep-alive-time")
 
 		if nClients > uint64(keyspaceLen) {
 			log.Fatalf("The number of clients needs to be smaller or equal to the number of streams")
@@ -118,6 +119,7 @@ var producerCmd = &cobra.Command{
 				AlwaysRESP2:      true,
 				DisableCache:     true,
 			}
+			clientOptions.Dialer.KeepAlive = clientKeepAlive
 			client, err := rueidis.NewClient(clientOptions)
 			if err != nil {
 				panic(err)

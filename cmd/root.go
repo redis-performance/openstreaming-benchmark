@@ -74,6 +74,7 @@ func init() {
 	rootCmd.PersistentFlags().Bool("oss-cluster", false, "Enable OSS cluster mode.")
 	rootCmd.PersistentFlags().Duration("between-clients-duration", time.Millisecond*0, "Between each client creation, wait this time.")
 	rootCmd.PersistentFlags().Duration("test-time", time.Second*0, "test time in seconds.")
+	rootCmd.PersistentFlags().Duration("client-keep-alive-time", time.Second*60, "keepalive time (in every keepalive we send a PING).")
 	rootCmd.PersistentFlags().Bool("version", false, "Output version and exit")
 	rootCmd.PersistentFlags().Bool("verbose", false, "Output verbose info")
 	rootCmd.PersistentFlags().String("resp", "", "redis command response protocol (2 - RESP 2, 3 - RESP 3). If empty will not enforce it.")

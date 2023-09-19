@@ -14,7 +14,6 @@ import (
 	"log"
 	"math"
 	"math/rand"
-	"net"
 	"os"
 	"os/signal"
 	"sync"
@@ -24,6 +23,7 @@ import (
 var totalCommands uint64
 var totalErrors uint64
 var latencies *hdrhistogram.Histogram
+var latenciesTick *hdrhistogram.Histogram
 
 const Inf = rate.Limit(math.MaxFloat64)
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -64,34 +64,15 @@ var producerCmd = &cobra.Command{
 		nameserver, _ := cmd.Flags().GetString("nameserver")
 		streamPrefix, _ := cmd.Flags().GetString("stream-prefix")
 		betweenClientsDelay, _ := cmd.Flags().GetDuration("between-clients-duration")
+		jsonOutFile, _ := cmd.Flags().GetString("json-out-file")
 
 		if nClients > uint64(keyspaceLen) {
 			log.Fatalf("The number of clients needs to be smaller or equal to the number of streams")
 		}
+		ctx := context.Background()
 
-		ips := make([]net.IP, 0)
-		if nameserver != "" {
-			fmt.Printf("Using %s to resolve hostname %s\n", nameserver, host)
-			r := &net.Resolver{
-				PreferGo: true,
-				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-					d := net.Dialer{
-						Timeout: time.Millisecond * time.Duration(10000),
-					}
-					return d.DialContext(ctx, network, nameserver)
-				},
-			}
-			ips, _ = r.LookupIP(context.Background(), "ip", host)
-		} else {
-			ips, _ = net.LookupIP(host)
-		}
-		if len(ips) < 1 {
-			log.Fatalf("Failed to resolve %s to any IP", host)
-		}
+		ips := resolveHostnames(nameserver, host, ctx)
 
-		fmt.Printf("IPs %v\n", ips)
-
-		stopChan := make(chan struct{})
 		// a WaitGroup for the goroutines to tell us they've stopped
 		wg := sync.WaitGroup{}
 
@@ -115,8 +96,10 @@ var producerCmd = &cobra.Command{
 		fmt.Printf("samplesPerClient %d\n", samplesPerClient)
 		client_update_tick := 1
 		latencies = hdrhistogram.New(1, 90000000, 3)
+		latenciesTick = hdrhistogram.New(1, 90000000, 3)
 		value := stringWithCharset(dataLen, charset)
 		datapointsChan := make(chan datapoint, numberRequests)
+		startT := time.Now()
 		for clientId := 0; uint64(clientId) < nClients; clientId++ {
 			randSource := rand.New(rand.NewSource(seed + int64(clientId)))
 			clientStreamStart := (clientId * streamsPerClient) + 1
@@ -152,13 +135,13 @@ var producerCmd = &cobra.Command{
 		signal.Notify(c, os.Interrupt)
 
 		tick := time.NewTicker(time.Duration(client_update_tick) * time.Second)
-		closed, _, duration, totalMessages, _ := updateCLI(tick, c, numberRequests, false, datapointsChan)
+		closed, _, duration, totalMessages, messageRateTs, percentilesTs := updateCLI(tick, c, numberRequests, false, datapointsChan)
 		messageRate := float64(totalMessages) / float64(duration.Seconds())
 		avgMs := float64(latencies.Mean()) / 1000.0
 		p50IngestionMs := float64(latencies.ValueAtQuantile(50.0)) / 1000.0
 		p95IngestionMs := float64(latencies.ValueAtQuantile(95.0)) / 1000.0
 		p99IngestionMs := float64(latencies.ValueAtQuantile(99.0)) / 1000.0
-
+		endT := time.Now()
 		fmt.Printf("\n")
 		fmt.Printf("#################################################\n")
 		fmt.Printf("Total Duration %.3f Seconds\n", duration.Seconds())
@@ -168,14 +151,17 @@ var producerCmd = &cobra.Command{
 		fmt.Printf("    %9s %9s %9s %9s\n", "avg", "p50", "p95", "p99")
 		fmt.Printf("    %9.3f %9.3f %9.3f %9.3f\n", avgMs, p50IngestionMs, p95IngestionMs, p99IngestionMs)
 
+		testResult := NewTestResult("", uint(nClients), uint64(rps))
+		testResult.FillDurationInfo(startT, endT, duration)
+		testResult.OverallClientLatencies = percentilesTs
+		testResult.OverallQueryRates = messageRateTs
+		_, overallLatencies := generateLatenciesMap(latencies, duration)
+		testResult.Totals = overallLatencies
+		saveJsonResult(testResult, jsonOutFile)
 		if closed {
 			return
 		}
 
-		// tell the goroutine to stop
-		close(stopChan)
-		// and wait for them both to reply back
-		wg.Wait()
 	},
 }
 
@@ -229,69 +215,6 @@ func benchmarkRoutine(client rueidis.Client, streamPrefix, value string, datapoi
 		duration := endT.Sub(startT)
 		streamMessages[streamId] = counter
 		datapointsChan <- datapoint{!(err != nil), duration.Microseconds()}
-	}
-}
-
-func updateCLI(tick *time.Ticker, c chan os.Signal, message_limit uint64, loop bool, datapointsChan chan datapoint) (bool, time.Time, time.Duration, uint64, []float64) {
-	var currentErr uint64 = 0
-	var currentCount uint64 = 0
-	start := time.Now()
-	prevTime := time.Now()
-	prevMessageCount := uint64(0)
-	messageRateTs := []float64{}
-	var dp datapoint
-	fmt.Printf("%26s %7s %25s %25s %7s %25s %25s\n", "Test time", " ", "Total Commands", "Total Errors", "", "Command Rate", "p50 lat. (msec)")
-	for {
-		select {
-		case dp = <-datapointsChan:
-			{
-				latencies.RecordValue(dp.duration_ms)
-				if !dp.success {
-					currentErr++
-				}
-				currentCount++
-			}
-		case <-tick.C:
-			{
-				totalCommands += currentCount
-				totalErrors += currentErr
-				currentErr = 0
-				currentCount = 0
-				now := time.Now()
-				took := now.Sub(prevTime)
-				messageRate := float64(totalCommands-prevMessageCount) / float64(took.Seconds())
-				completionPercentStr := "[----%]"
-				if !loop {
-					completionPercent := float64(totalCommands) / float64(message_limit) * 100.0
-					completionPercentStr = fmt.Sprintf("[%3.1f%%]", completionPercent)
-				}
-				errorPercent := float64(totalErrors) / float64(totalCommands) * 100.0
-
-				p50 := float64(latencies.ValueAtQuantile(50.0)) / 1000.0
-
-				if prevMessageCount == 0 && totalCommands != 0 {
-					start = time.Now()
-				}
-				if totalCommands != 0 {
-					messageRateTs = append(messageRateTs, messageRate)
-				}
-				prevMessageCount = totalCommands
-				prevTime = now
-
-				fmt.Printf("%25.0fs %s %25d %25d [%3.1f%%] %25.2f %25.2f\t", time.Since(start).Seconds(), completionPercentStr, totalCommands, totalErrors, errorPercent, messageRate, p50)
-				fmt.Printf("\r")
-				//w.Flush()
-				if message_limit > 0 && totalCommands >= uint64(message_limit) && !loop {
-					return true, start, time.Since(start), totalCommands, messageRateTs
-				}
-
-				break
-			}
-
-		case <-c:
-			fmt.Println("\nreceived Ctrl-c - shutting down")
-			return true, start, time.Since(start), totalCommands, messageRateTs
-		}
 	}
 }
 

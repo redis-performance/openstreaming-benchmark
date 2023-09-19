@@ -66,6 +66,7 @@ var producerCmd = &cobra.Command{
 		betweenClientsDelay, _ := cmd.Flags().GetDuration("between-clients-duration")
 		jsonOutFile, _ := cmd.Flags().GetString("json-out-file")
 		clientKeepAlive, _ := cmd.Flags().GetDuration("client-keep-alive-time")
+		loop, _ := cmd.Flags().GetBool("loop")
 
 		if nClients > uint64(keyspaceLen) {
 			log.Fatalf("The number of clients needs to be smaller or equal to the number of streams")
@@ -126,7 +127,7 @@ var producerCmd = &cobra.Command{
 			}
 			defer client.Close()
 
-			go benchmarkRoutine(client, streamPrefix, value, datapointsChan, samplesPerClient, &wg, useRateLimiter, rateLimiter, gen, randSource, streamMaxlen, streamMaxlenExpireSeconds)
+			go benchmarkRoutine(client, streamPrefix, value, datapointsChan, samplesPerClient, &wg, useRateLimiter, rateLimiter, gen, randSource, streamMaxlen, streamMaxlenExpireSeconds, loop)
 
 			// delay the creation for each additional client
 			time.Sleep(betweenClientsDelay)
@@ -137,7 +138,7 @@ var producerCmd = &cobra.Command{
 		signal.Notify(c, os.Interrupt)
 
 		tick := time.NewTicker(time.Duration(client_update_tick) * time.Second)
-		closed, _, duration, totalMessages, messageRateTs, percentilesTs := updateCLI(tick, c, numberRequests, false, datapointsChan)
+		closed, _, duration, totalMessages, messageRateTs, percentilesTs := updateCLI(tick, c, numberRequests, loop, datapointsChan)
 		messageRate := float64(totalMessages) / float64(duration.Seconds())
 		avgMs := float64(latencies.Mean()) / 1000.0
 		p50IngestionMs := float64(latencies.ValueAtQuantile(50.0)) / 1000.0
@@ -167,10 +168,10 @@ var producerCmd = &cobra.Command{
 	},
 }
 
-func benchmarkRoutine(client rueidis.Client, streamPrefix, value string, datapointsChan chan datapoint, samplesPerClient uint64, wg *sync.WaitGroup, useRateLimiter bool, rateLimiter *rate.Limiter, gen *generator.Zipfian, randSource *rand.Rand, streamMaxlen int64, streamMaxlenExpireSeconds int64) {
+func benchmarkRoutine(client rueidis.Client, streamPrefix, value string, datapointsChan chan datapoint, samplesPerClient uint64, wg *sync.WaitGroup, useRateLimiter bool, rateLimiter *rate.Limiter, gen *generator.Zipfian, randSource *rand.Rand, streamMaxlen int64, streamMaxlenExpireSeconds int64, loop bool) {
 	streamMessages := make(map[int64]int64, 0)
 	defer wg.Done()
-	for i := 0; uint64(i) < samplesPerClient; i++ {
+	for i := 0; uint64(i) < samplesPerClient || loop; i++ {
 		ctx := context.Background()
 		if useRateLimiter {
 			r := rateLimiter.ReserveN(time.Now(), int(1))
@@ -205,7 +206,6 @@ func benchmarkRoutine(client rueidis.Client, streamPrefix, value string, datapoi
 						err = client.Do(ctx, client.B().Expire().Key(keyname).Seconds(streamMaxlenExpireSeconds).Build()).Error()
 					}
 				}
-
 			}
 
 		}

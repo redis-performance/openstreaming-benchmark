@@ -77,6 +77,7 @@ func init() {
 	rootCmd.PersistentFlags().Duration("client-keep-alive-time", time.Second*60, "keepalive time (in every keepalive we send a PING).")
 	rootCmd.PersistentFlags().Bool("version", false, "Output version and exit")
 	rootCmd.PersistentFlags().Bool("verbose", false, "Output verbose info")
+	rootCmd.PersistentFlags().Bool("loop", false, "Run benchmark in a loop.")
 	rootCmd.PersistentFlags().String("resp", "", "redis command response protocol (2 - RESP 2, 3 - RESP 3). If empty will not enforce it.")
 	rootCmd.PersistentFlags().String("nameserver", "", "the IP address of the DNS name server. The IP address can be an IPv4 or an IPv6 address. If empty will use the default host namserver.")
 	rootCmd.PersistentFlags().String("json-out-file", "", "Results file. If empty will not save.")

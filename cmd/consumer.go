@@ -32,6 +32,7 @@ var consumerCmd = &cobra.Command{
 		numberRequests, _ := cmd.Flags().GetUint64("n")
 		auth, _ := cmd.Flags().GetString("a")
 		verbose, _ := cmd.Flags().GetBool("verbose")
+		loop, _ := cmd.Flags().GetBool("loop")
 		seed, _ := cmd.Flags().GetInt64("seed")
 		nameserver, _ := cmd.Flags().GetString("nameserver")
 		streamPrefix, _ := cmd.Flags().GetString("stream-prefix")
@@ -139,7 +140,7 @@ var consumerCmd = &cobra.Command{
 
 		tick := time.NewTicker(time.Duration(client_update_tick) * time.Second)
 
-		closed, _, duration, totalMessages, messageRateTs, percentilesTs := updateCLI(tick, c, numberRequests, false, datapointsChan)
+		closed, _, duration, totalMessages, messageRateTs, percentilesTs := updateCLI(tick, c, numberRequests, loop, datapointsChan)
 		messageRate := float64(totalMessages) / float64(duration.Seconds())
 		avgMs := float64(latencies.Mean()) / 1000.0
 		p50IngestionMs := float64(latencies.ValueAtQuantile(50.0)) / 1000.0

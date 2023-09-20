@@ -29,8 +29,9 @@ const Inf = rate.Limit(math.MaxFloat64)
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 type datapoint struct {
-	success     bool
-	duration_ms int64
+	success        bool
+	durationMs     int64
+	commandsIssued []int
 }
 
 func stringWithCharset(length int, charset string) string {
@@ -130,7 +131,7 @@ var producerCmd = &cobra.Command{
 		signal.Notify(c, os.Interrupt)
 
 		tick := time.NewTicker(time.Duration(client_update_tick) * time.Second)
-		closed, _, duration, totalMessages, messageRateTs, percentilesTs := updateCLI(tick, c, numberRequests, loop, datapointsChan)
+		closed, _, duration, totalMessages, messageRateTs, percentilesTs, cmdRateTs := updateCLI(tick, c, numberRequests, loop, datapointsChan)
 		messageRate := float64(totalMessages) / float64(duration.Seconds())
 		avgMs := float64(latencies.Mean()) / 1000.0
 		p50IngestionMs := float64(latencies.ValueAtQuantile(50.0)) / 1000.0
@@ -150,6 +151,7 @@ var producerCmd = &cobra.Command{
 		testResult.FillDurationInfo(startT, endT, duration)
 		testResult.OverallClientLatencies = percentilesTs
 		testResult.OverallQueryRates = messageRateTs
+		testResult.CmdRateTs = cmdRateTs
 		_, overallLatencies := generateLatenciesMap(latencies, duration)
 		testResult.Totals = overallLatencies
 		saveJsonResult(testResult, jsonOutFile)
@@ -173,6 +175,7 @@ func benchmarkRoutine(client rueidis.Client, streamPrefix, value string, datapoi
 		var err error = nil
 		var keyname string
 		var counter int64 = streamMaxlen
+		cmdsIssued := make([]int, 0, 1)
 		for counter >= streamMaxlen {
 			streamId = gen.Next(randSource)
 			counterV, found := streamMessages[streamId]
@@ -180,6 +183,7 @@ func benchmarkRoutine(client rueidis.Client, streamPrefix, value string, datapoi
 			if found {
 				counter = counterV
 			} else {
+				cmdsIssued = append(cmdsIssued, XLEN)
 				counter, err = client.Do(ctx, client.B().Xlen().Key(keyname).Build()).AsInt64()
 				if counter > 0 {
 					counter++
@@ -187,13 +191,16 @@ func benchmarkRoutine(client rueidis.Client, streamPrefix, value string, datapoi
 			}
 			if counter >= streamMaxlen {
 				if streamMaxlenExpireSeconds == 0 {
+					cmdsIssued = append(cmdsIssued, DEL)
 					err = client.Do(ctx, client.B().Del().Key(keyname).Build()).Error()
 					counter = 0
 				} else {
 					var ttl int64 = -1
+					cmdsIssued = append(cmdsIssued, TTL)
 					cc := client.Do(ctx, client.B().Ttl().Key(keyname).Build())
 					ttl, err = cc.AsInt64()
 					if ttl < 0 {
+						cmdsIssued = append(cmdsIssued, EXPIRE)
 						//fmt.Printf("Expiring %s in %d seconds given it surpasses stream max len %d\n", keyname, streamMaxlenExpireSeconds, streamMaxlen)
 						err = client.Do(ctx, client.B().Expire().Key(keyname).Seconds(streamMaxlenExpireSeconds).Build()).Error()
 					}
@@ -202,26 +209,17 @@ func benchmarkRoutine(client rueidis.Client, streamPrefix, value string, datapoi
 
 		}
 		counter = counter + 1
+		cmdsIssued = append(cmdsIssued, XADD)
 		streamEntry := fmt.Sprintf("%d", counter)
 		startT := time.Now()
 		err = client.Do(ctx, client.B().Xadd().Key(keyname).Id(streamEntry).FieldValue().FieldValue("field", value).Build()).Error()
 		endT := time.Now()
 		duration := endT.Sub(startT)
 		streamMessages[streamId] = counter
-		datapointsChan <- datapoint{!(err != nil), duration.Microseconds()}
+		datapointsChan <- datapoint{!(err != nil), duration.Microseconds(), cmdsIssued}
 	}
 }
 
 func init() {
 	rootCmd.AddCommand(producerCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// producerCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// producerCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

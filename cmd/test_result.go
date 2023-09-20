@@ -42,6 +42,9 @@ type TestResult struct {
 
 	// Per second ( tick ) client stats
 	ClientRunTimeStats map[int64]interface{} `json:"ClientRunTimeStats"`
+
+	// Per second ( tick ) client stats
+	CmdRateTs map[string][]int `json:"CmdRateTs"`
 }
 
 func NewTestResult(metadata string, clients uint, maxRps uint64) *TestResult {

@@ -35,6 +35,7 @@ var consumerCmd = &cobra.Command{
 		nConsumersPerStreamMax, _ := cmd.Flags().GetUint64("consumers-per-stream-max")
 		nConsumersPerStreamMin, _ := cmd.Flags().GetUint64("consumers-per-stream-min")
 		readBlockMs, _ := cmd.Flags().GetInt64("stream-read-block-ms")
+		readCount, _ := cmd.Flags().GetInt64("stream-read-count")
 		numberRequests, _ := cmd.Flags().GetUint64("n")
 		auth, _ := cmd.Flags().GetString("a")
 		verbose, _ := cmd.Flags().GetBool("verbose")
@@ -123,7 +124,7 @@ var consumerCmd = &cobra.Command{
 			for consumerId := 1; uint64(consumerId) <= uint64(consumersForStream); consumerId++ {
 				consumername := fmt.Sprintf("streamconsumer:%s:%d", groupname, consumerId)
 				wg.Add(1)
-				go benchmarkConsumerRoutine(client, c, datapointsChan, &wg, keyname, groupname, consumername, readBlockMs)
+				go benchmarkConsumerRoutine(client, c, datapointsChan, &wg, keyname, groupname, consumername, readBlockMs, readCount)
 				bar.Add(1)
 			}
 
@@ -133,7 +134,7 @@ var consumerCmd = &cobra.Command{
 		fmt.Printf("Finished starting all consumer go-routines.\n")
 		tick := time.NewTicker(time.Duration(client_update_tick) * time.Second)
 
-		closed, _, duration, totalMessages, messageRateTs, percentilesTs := updateCLI(tick, c, numberRequests, loop, datapointsChan)
+		closed, _, duration, totalMessages, messageRateTs, percentilesTs, cmdRateTs := updateCLI(tick, c, numberRequests, loop, datapointsChan)
 		endT = time.Now()
 		messageRate := float64(totalMessages) / float64(duration.Seconds())
 		avgMs := float64(latencies.Mean()) / 1000.0
@@ -154,6 +155,7 @@ var consumerCmd = &cobra.Command{
 		testResult.FillDurationInfo(startT, endT, duration)
 		testResult.OverallClientLatencies = percentilesTs
 		testResult.OverallQueryRates = messageRateTs
+		testResult.CmdRateTs = cmdRateTs
 		_, overallLatencies := generateLatenciesMap(latencies, duration)
 		testResult.Totals = overallLatencies
 		saveJsonResult(testResult, jsonOutFile)
@@ -164,50 +166,49 @@ var consumerCmd = &cobra.Command{
 	},
 }
 
-func benchmarkConsumerRoutine(client rueidis.Client, c chan os.Signal, datapointsChan chan datapoint, wg *sync.WaitGroup, keyname, groupname, consumername string, readBlockMs int64) {
+func benchmarkConsumerRoutine(client rueidis.Client, c chan os.Signal, datapointsChan chan datapoint, wg *sync.WaitGroup, keyname, groupname, consumername string, readBlockMs, readCount int64) {
 	defer wg.Done()
 	ctx := context.Background()
+
 	for {
 		select {
 		case <-c:
 			fmt.Println("\nreceived Ctrl-c on Consumer Routine - shutting down")
 			return
 		default:
+			cmdsIssued := make([]int, 0, 1)
+			cmdsIssued = append(cmdsIssued, XREADGROUP)
 			startT := time.Now()
-			xreadEntries, err := client.Do(ctx, client.B().Xreadgroup().Group(groupname, consumername).Block(readBlockMs).Streams().Key(keyname).Id(">").Build()).AsXRead()
+			xreadEntries, err := client.Do(ctx, client.B().Xreadgroup().Group(groupname, consumername).Count(readCount).Block(readBlockMs).Streams().Key(keyname).Id(">").Build()).AsXRead()
 			if err != nil {
+				cmdsIssued = append(cmdsIssued, XGROUPCREATE)
+				cmdsIssued = append(cmdsIssued, XGROUPCREATECONSUMER)
+				cmdsIssued = append(cmdsIssued, XREADGROUP)
 				err = client.Do(ctx, client.B().XgroupCreate().Key(keyname).Group(groupname).Id("0").Mkstream().Build()).Error()
 				err = client.Do(ctx, client.B().XgroupCreateconsumer().Key(keyname).Group(groupname).Consumer(consumername).Build()).Error()
-				xreadEntries, err = client.Do(ctx, client.B().Xreadgroup().Group(groupname, consumername).Block(readBlockMs).Streams().Key(keyname).Id(">").Build()).AsXRead()
+				xreadEntries, err = client.Do(ctx, client.B().Xreadgroup().Group(groupname, consumername).Count(readCount).Block(readBlockMs).Streams().Key(keyname).Id(">").Build()).AsXRead()
 			}
 			if err == nil {
 				xrangeEntries, found := xreadEntries[keyname]
 				if found {
 					for _, xrangeEntry := range xrangeEntries {
+						cmdsIssued = append(cmdsIssued, XACK)
 						err = client.Do(ctx, client.B().Xack().Key(keyname).Group(groupname).Id(xrangeEntry.ID).Build()).Error()
 					}
 				}
 			}
 			endT := time.Now()
 			duration := endT.Sub(startT)
-			datapointsChan <- datapoint{!(err != nil), duration.Microseconds()}
+			datapointsChan <- datapoint{!(err != nil), duration.Microseconds(), cmdsIssued}
 		}
-
 	}
 }
 
 func init() {
 	rootCmd.AddCommand(consumerCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
 	consumerCmd.PersistentFlags().Int64("stream-read-block-ms", 30000, "Block the client for this amount of milliseconds.")
 	consumerCmd.PersistentFlags().Uint64("consumers-per-stream-min", 5, "per stream consumer count min.")
 	consumerCmd.PersistentFlags().Uint64("consumers-per-stream-max", 50, "per stream consumer count max.")
+	consumerCmd.PersistentFlags().Int64("stream-read-count", 1, "per command count of messages to be read.")
 
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// consumerCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

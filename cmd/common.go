@@ -10,6 +10,23 @@ import (
 	"time"
 )
 
+const (
+	XREADGROUP           int = 0
+	XADD                     = 1
+	XACK                     = 2
+	EXPIRE                   = 3
+	DEL                      = 4
+	XGROUPCREATE             = 5
+	XGROUPCREATECONSUMER     = 6
+	TTL                      = 7
+	XLEN                     = 8
+)
+
+const (
+	DefaultReadBuffer  int = 2 << 13
+	DefaultWriteBuffer int = 2 << 13
+)
+
 func getClientWithOptions(connectionStr, auth string, blockingPoolSize, readBufferEachConn, writeBufferEachConn int, clientKeepAlive time.Duration) rueidis.Client {
 	clientOptions := rueidis.ClientOption{
 		InitAddress:         []string{connectionStr},
@@ -56,13 +73,38 @@ func resolveHostnames(nameserver, host string, ctx context.Context) []net.IP {
 	return ips
 }
 
-func updateCLI(tick *time.Ticker, c chan os.Signal, message_limit uint64, loop bool, datapointsChan chan datapoint) (bool, time.Time, time.Duration, uint64, []float64, []map[string]float64) {
+func updateCLI(tick *time.Ticker, c chan os.Signal, message_limit uint64, loop bool, datapointsChan chan datapoint) (bool, time.Time, time.Duration, uint64, []float64, []map[string]float64, map[string][]int) {
+	ALL_COMMANDS := []int{
+		XREADGROUP,
+		XADD,
+		XACK,
+		EXPIRE,
+		DEL,
+		XGROUPCREATE,
+		XGROUPCREATECONSUMER,
+		TTL,
+		XLEN,
+	}
+	ALL_COMMANDS_STR := []string{
+		"XREADGROUP",
+		"XADD",
+		"XACK",
+		"EXPIRE",
+		"DEL",
+		"XGROUPCREATE",
+		"XGROUPCREATECONSUMER",
+		"TTL",
+		"XLEN",
+	}
+
 	var currentErr uint64 = 0
 	var currentCount uint64 = 0
 	start := time.Now()
 	prevTime := time.Now()
 	prevMessageCount := uint64(0)
 	messageRateTs := []float64{}
+	cmdRateTs := map[string][]int{}
+	cmdRateTick := make([]int, len(ALL_COMMANDS), len(ALL_COMMANDS))
 	percentilesTs := []map[string]float64{}
 	var dp datapoint
 	fmt.Printf("%26s %7s %25s %25s %7s %25s %25s\n", "Test time", " ", "Total Commands", "Total Errors", "", "Command Rate", "p50 lat. (msec)")
@@ -70,12 +112,15 @@ func updateCLI(tick *time.Ticker, c chan os.Signal, message_limit uint64, loop b
 		select {
 		case dp = <-datapointsChan:
 			{
-				latencies.RecordValue(dp.duration_ms)
-				latenciesTick.RecordValue(dp.duration_ms)
+				latencies.RecordValue(dp.durationMs)
+				latenciesTick.RecordValue(dp.durationMs)
 				if !dp.success {
 					currentErr++
 				}
 				currentCount++
+				for _, cmdType := range dp.commandsIssued {
+					cmdRateTick[cmdType]++
+				}
 			}
 		case <-tick.C:
 			{
@@ -108,6 +153,14 @@ func updateCLI(tick *time.Ticker, c chan os.Signal, message_limit uint64, loop b
 					percentilesTs = append(percentilesTs, perTickLatencies)
 					latenciesTick.Reset()
 				}
+
+				// rotate cmdRateTick and update cmdRateTs
+				for pos, value := range cmdRateTick {
+					cmdNameStr := ALL_COMMANDS_STR[pos]
+					cmdRateTs[cmdNameStr] = append(cmdRateTs[cmdNameStr], value)
+					cmdRateTick[pos] = 0
+				}
+
 				prevMessageCount = totalCommands
 				prevTime = now
 
@@ -115,7 +168,7 @@ func updateCLI(tick *time.Ticker, c chan os.Signal, message_limit uint64, loop b
 				fmt.Printf("\r")
 				//w.Flush()
 				if message_limit > 0 && totalCommands >= uint64(message_limit) && !loop {
-					return true, start, time.Since(start), totalCommands, messageRateTs, percentilesTs
+					return true, start, time.Since(start), totalCommands, messageRateTs, percentilesTs, cmdRateTs
 				}
 
 				break
@@ -123,7 +176,7 @@ func updateCLI(tick *time.Ticker, c chan os.Signal, message_limit uint64, loop b
 
 		case <-c:
 			fmt.Println("\nreceived Ctrl-c - shutting down")
-			return true, start, time.Since(start), totalCommands, messageRateTs, percentilesTs
+			return true, start, time.Since(start), totalCommands, messageRateTs, percentilesTs, cmdRateTs
 		}
 	}
 }

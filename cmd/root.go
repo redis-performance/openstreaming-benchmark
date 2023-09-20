@@ -17,7 +17,6 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/rueian/rueidis"
 	"os"
 	"time"
 
@@ -55,9 +54,6 @@ func Execute() {
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
 	rootCmd.PersistentFlags().String("h", "127.0.0.1", "Server hostname.")
 	rootCmd.PersistentFlags().Int("p", 6379, "Server port.")
 	rootCmd.PersistentFlags().Int("rps", 0, "Max rps. If 0 no limit is applied and the DB is stressed up to maximum.")
@@ -82,6 +78,6 @@ func init() {
 	rootCmd.PersistentFlags().String("resp", "", "redis command response protocol (2 - RESP 2, 3 - RESP 3). If empty will not enforce it.")
 	rootCmd.PersistentFlags().String("nameserver", "", "the IP address of the DNS name server. The IP address can be an IPv4 or an IPv6 address. If empty will use the default host namserver.")
 	rootCmd.PersistentFlags().String("json-out-file", "", "Results file. If empty will not save.")
-	rootCmd.PersistentFlags().Int("read-buffer-each-conn", rueidis.DefaultReadBuffer, "the size of the bufio.NewReaderSize for each connection, default to DefaultReadBuffer (0.5 MiB).")
-	rootCmd.PersistentFlags().Int("write-buffer-each-conn", rueidis.DefaultWriteBuffer, "the size of the bufio.NewWriterSize for each connection, default to DefaultWriteBuffer (0.5 MiB).")
+	rootCmd.PersistentFlags().Int("read-buffer-each-conn", DefaultReadBuffer, "the size of the bufio.NewReaderSize for each connection.")
+	rootCmd.PersistentFlags().Int("write-buffer-each-conn", DefaultWriteBuffer, "the size of the bufio.NewWriterSize for each connection.")
 }

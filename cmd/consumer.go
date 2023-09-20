@@ -29,6 +29,8 @@ var consumerCmd = &cobra.Command{
 		host, _ := cmd.Flags().GetString("h")
 		jsonOutFile, _ := cmd.Flags().GetString("json-out-file")
 		port, _ := cmd.Flags().GetInt("p")
+		readBufferEachConn, _ := cmd.Flags().GetInt("read-buffer-each-conn")
+		writeBufferEachConn, _ := cmd.Flags().GetInt("write-buffer-each-conn")
 		keyspaceLen, _ := cmd.Flags().GetInt64("keyspace-len")
 		nConsumersPerStreamMax, _ := cmd.Flags().GetUint64("consumers-per-stream-max")
 		nConsumersPerStreamMin, _ := cmd.Flags().GetUint64("consumers-per-stream-min")
@@ -80,22 +82,11 @@ var consumerCmd = &cobra.Command{
 				fmt.Printf("Using connection string %s for stream %s\n", connectionStr, keyname)
 			}
 
-			clientOptions := rueidis.ClientOption{
-				InitAddress:      []string{connectionStr},
-				Password:         auth,
-				AlwaysPipelining: false,
-				AlwaysRESP2:      true,
-				DisableCache:     true,
-				BlockingPoolSize: int(consumersForStream),
-			}
-			clientOptions.Dialer.KeepAlive = clientKeepAlive
-			client, err := rueidis.NewClient(clientOptions)
-			if err != nil {
-				panic(err)
-			}
+			blockingPoolSize := int(consumersForStream)
+			client := getClientWithOptions(connectionStr, auth, blockingPoolSize, readBufferEachConn, writeBufferEachConn, clientKeepAlive)
 
 			// ensure we destroy the group before starting
-			err = client.Do(ctx, client.B().XgroupDestroy().Key(keyname).Group(groupname).Build()).Error()
+			err := client.Do(ctx, client.B().XgroupDestroy().Key(keyname).Group(groupname).Build()).Error()
 			err = client.Do(ctx, client.B().XgroupCreate().Key(keyname).Group(groupname).Id("0").Mkstream().Build()).Error()
 			if err != nil {
 				panic(err)
@@ -125,24 +116,10 @@ var consumerCmd = &cobra.Command{
 				fmt.Printf("Using connection string %s for stream %s\n", connectionStr, keyname)
 			}
 
-			clientOptions := rueidis.ClientOption{
-				InitAddress:      []string{connectionStr},
-				Password:         auth,
-				AlwaysPipelining: false,
-				AlwaysRESP2:      true,
-				DisableCache:     true,
-				BlockingPoolSize: int(consumersForStream),
-			}
-			clientOptions.Dialer.KeepAlive = clientKeepAlive
-			client, err := rueidis.NewClient(clientOptions)
-			if err != nil {
-				panic(err)
-			}
+			blockingPoolSize := int(consumersForStream)
+			client := getClientWithOptions(connectionStr, auth, blockingPoolSize, readBufferEachConn, writeBufferEachConn, clientKeepAlive)
+
 			defer client.Close()
-			// ensure we destroy the group before starting
-			if err != nil {
-				panic(err)
-			}
 			for consumerId := 1; uint64(consumerId) <= uint64(consumersForStream); consumerId++ {
 				consumername := fmt.Sprintf("streamconsumer:%s:%d", groupname, consumerId)
 				wg.Add(1)

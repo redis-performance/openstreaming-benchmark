@@ -3,11 +3,33 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"github.com/rueian/rueidis"
 	"log"
 	"net"
 	"os"
 	"time"
 )
+
+func getClientWithOptions(connectionStr, auth string, blockingPoolSize, readBufferEachConn, writeBufferEachConn int, clientKeepAlive time.Duration) rueidis.Client {
+	clientOptions := rueidis.ClientOption{
+		InitAddress:         []string{connectionStr},
+		Password:            auth,
+		AlwaysPipelining:    false,
+		AlwaysRESP2:         true,
+		DisableCache:        true,
+		BlockingPoolSize:    blockingPoolSize,
+		PipelineMultiplex:   0,
+		RingScaleEachConn:   1,
+		ReadBufferEachConn:  readBufferEachConn,
+		WriteBufferEachConn: writeBufferEachConn,
+	}
+	clientOptions.Dialer.KeepAlive = clientKeepAlive
+	client, err := rueidis.NewClient(clientOptions)
+	if err != nil {
+		panic(err)
+	}
+	return client
+}
 
 func resolveHostnames(nameserver, host string, ctx context.Context) []net.IP {
 	ips := make([]net.IP, 0)

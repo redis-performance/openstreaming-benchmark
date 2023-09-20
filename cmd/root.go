@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/rueian/rueidis"
 	"os"
 	"time"
 
@@ -81,5 +82,6 @@ func init() {
 	rootCmd.PersistentFlags().String("resp", "", "redis command response protocol (2 - RESP 2, 3 - RESP 3). If empty will not enforce it.")
 	rootCmd.PersistentFlags().String("nameserver", "", "the IP address of the DNS name server. The IP address can be an IPv4 or an IPv6 address. If empty will use the default host namserver.")
 	rootCmd.PersistentFlags().String("json-out-file", "", "Results file. If empty will not save.")
-
+	rootCmd.PersistentFlags().Int("read-buffer-each-conn", rueidis.DefaultReadBuffer, "the size of the bufio.NewReaderSize for each connection, default to DefaultReadBuffer (0.5 MiB).")
+	rootCmd.PersistentFlags().Int("write-buffer-each-conn", rueidis.DefaultWriteBuffer, "the size of the bufio.NewWriterSize for each connection, default to DefaultWriteBuffer (0.5 MiB).")
 }

@@ -67,6 +67,8 @@ var producerCmd = &cobra.Command{
 		jsonOutFile, _ := cmd.Flags().GetString("json-out-file")
 		clientKeepAlive, _ := cmd.Flags().GetDuration("client-keep-alive-time")
 		loop, _ := cmd.Flags().GetBool("loop")
+		readBufferEachConn, _ := cmd.Flags().GetInt("read-buffer-each-conn")
+		writeBufferEachConn, _ := cmd.Flags().GetInt("write-buffer-each-conn")
 
 		if nClients > uint64(keyspaceLen) {
 			log.Fatalf("The number of clients needs to be smaller or equal to the number of streams")
@@ -113,18 +115,8 @@ var producerCmd = &cobra.Command{
 				fmt.Printf("Using connection string %s for client %d\n", connectionStr, clientId)
 			}
 
-			clientOptions := rueidis.ClientOption{
-				InitAddress:      []string{connectionStr},
-				Password:         auth,
-				AlwaysPipelining: false,
-				AlwaysRESP2:      true,
-				DisableCache:     true,
-			}
-			clientOptions.Dialer.KeepAlive = clientKeepAlive
-			client, err := rueidis.NewClient(clientOptions)
-			if err != nil {
-				panic(err)
-			}
+			blockingPoolSize := 1
+			client := getClientWithOptions(connectionStr, auth, blockingPoolSize, readBufferEachConn, writeBufferEachConn, clientKeepAlive)
 			defer client.Close()
 
 			go benchmarkRoutine(client, streamPrefix, value, datapointsChan, samplesPerClient, &wg, useRateLimiter, rateLimiter, gen, randSource, streamMaxlen, streamMaxlenExpireSeconds, loop)

@@ -83,18 +83,22 @@ func calculateRateMetrics(current, prev int64, took time.Duration) (rate float64
 
 func generateLatenciesMap(hist *hdrhistogram.Histogram, tick time.Duration) (int64, map[string]float64) {
 	ops := hist.TotalCount()
-	percentilesTrack := []float64{0.0, 50.0, 99.0, 100.0}
+	percentilesTrack := []float64{0.0, 50.0, 95.0, 99.0, 99.9, 100.0}
 	q0 := 0.0
 	q50 := 0.0
+	q95 := 0.0
 	q99 := 0.0
+	q999 := 0.0
 	q100 := 0.0
 	if ops > 0 {
 		percentilesMap := hist.ValueAtPercentiles(percentilesTrack)
 		q0 = float64(percentilesMap[0.0]) / 10e2
 		q50 = float64(percentilesMap[50.0]) / 10e2
+		q95 = float64(percentilesMap[95.0]) / 10e2
 		q99 = float64(percentilesMap[99.0]) / 10e2
+		q999 = float64(percentilesMap[99.9]) / 10e2
 		q100 = float64(percentilesMap[100.0]) / 10e2
 	}
-	mp := map[string]float64{"q0": q0, "q50": q50, "q99": q99, "q100": q100, "ops/sec": float64(ops) / tick.Seconds()}
+	mp := map[string]float64{"q0": q0, "q50": q50, "q95": q95, "q99": q99, "q999": q999, "q100": q100, "ops/sec": float64(ops) / tick.Seconds()}
 	return ops, mp
 }

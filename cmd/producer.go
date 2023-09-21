@@ -29,9 +29,10 @@ const Inf = rate.Limit(math.MaxFloat64)
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 type datapoint struct {
-	success        bool
-	durationMs     int64
-	commandsIssued []int
+	success          bool
+	durationMs       int64
+	commandsIssued   []int
+	processedEntries int
 }
 
 func stringWithCharset(length int, charset string) string {
@@ -216,7 +217,7 @@ func benchmarkRoutine(client rueidis.Client, streamPrefix, value string, datapoi
 		endT := time.Now()
 		duration := endT.Sub(startT)
 		streamMessages[streamId] = counter
-		datapointsChan <- datapoint{!(err != nil), duration.Microseconds(), cmdsIssued}
+		datapointsChan <- datapoint{!(err != nil), duration.Microseconds(), cmdsIssued, 1}
 	}
 }
 

@@ -178,6 +178,7 @@ func benchmarkConsumerRoutine(client rueidis.Client, c chan os.Signal, datapoint
 		default:
 			cmdsIssued := make([]int, 0, 1)
 			cmdsIssued = append(cmdsIssued, XREADGROUP)
+			processedEntries := 0
 			startT := time.Now()
 			xreadEntries, err := client.Do(ctx, client.B().Xreadgroup().Group(groupname, consumername).Count(readCount).Block(readBlockMs).Streams().Key(keyname).Id(">").Build()).AsXRead()
 			if err != nil {
@@ -186,6 +187,7 @@ func benchmarkConsumerRoutine(client rueidis.Client, c chan os.Signal, datapoint
 				cmdsIssued = append(cmdsIssued, XREADGROUP)
 				err = client.Do(ctx, client.B().XgroupCreate().Key(keyname).Group(groupname).Id("0").Mkstream().Build()).Error()
 				err = client.Do(ctx, client.B().XgroupCreateconsumer().Key(keyname).Group(groupname).Consumer(consumername).Build()).Error()
+				startT = time.Now()
 				xreadEntries, err = client.Do(ctx, client.B().Xreadgroup().Group(groupname, consumername).Count(readCount).Block(readBlockMs).Streams().Key(keyname).Id(">").Build()).AsXRead()
 			}
 			if err == nil {
@@ -194,12 +196,13 @@ func benchmarkConsumerRoutine(client rueidis.Client, c chan os.Signal, datapoint
 					for _, xrangeEntry := range xrangeEntries {
 						cmdsIssued = append(cmdsIssued, XACK)
 						err = client.Do(ctx, client.B().Xack().Key(keyname).Group(groupname).Id(xrangeEntry.ID).Build()).Error()
+						processedEntries++
 					}
 				}
 			}
 			endT := time.Now()
 			duration := endT.Sub(startT)
-			datapointsChan <- datapoint{!(err != nil), duration.Microseconds(), cmdsIssued}
+			datapointsChan <- datapoint{!(err != nil), duration.Microseconds(), cmdsIssued, processedEntries}
 		}
 	}
 }

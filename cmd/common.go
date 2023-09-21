@@ -112,15 +112,20 @@ func updateCLI(tick *time.Ticker, c chan os.Signal, message_limit uint64, loop b
 		select {
 		case dp = <-datapointsChan:
 			{
-				latencies.RecordValue(dp.durationMs)
-				latenciesTick.RecordValue(dp.durationMs)
+				// in case of blocking commands that did not processed entries we don't really account it
+				if dp.processedEntries > 0 {
+					latencies.RecordValue(dp.durationMs)
+					latenciesTick.RecordValue(dp.durationMs)
+					currentCount++
+					for _, cmdType := range dp.commandsIssued {
+						cmdRateTick[cmdType]++
+					}
+				}
+				// in all cases we check for errors
 				if !dp.success {
 					currentErr++
 				}
-				currentCount++
-				for _, cmdType := range dp.commandsIssued {
-					cmdRateTick[cmdType]++
-				}
+
 			}
 		case <-tick.C:
 			{

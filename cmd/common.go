@@ -98,25 +98,29 @@ func updateCLI(tick *time.Ticker, c chan os.Signal, message_limit uint64, loop b
 	}
 
 	var currentErr uint64 = 0
-	var currentCount uint64 = 0
+	var currentCommandCount uint64 = 0
+	var currentMessageCount uint64 = 0
+	prevCommandCount := uint64(0)
+	prevMessageCount := uint64(0)
 	start := time.Now()
 	prevTime := time.Now()
-	prevMessageCount := uint64(0)
+
 	messageRateTs := []float64{}
 	cmdRateTs := map[string][]int{}
 	cmdRateTick := make([]int, len(ALL_COMMANDS), len(ALL_COMMANDS))
 	percentilesTs := []map[string]float64{}
 	var dp datapoint
-	fmt.Printf("%26s %7s %25s %25s %7s %25s %25s\n", "Test time", " ", "Total Commands", "Total Errors", "", "Command Rate", "p50 lat. (msec)")
+	fmt.Printf("%26s %7s %25s %25s %25s %7s %25s %25s %25s\n", "Test time", " ", "Total Commands", "Total Messages", "Total Errors", "", "Command Rate", "Message Rate", "p50 lat. (msec)")
 	for {
 		select {
 		case dp = <-datapointsChan:
 			{
+				currentCommandCount++
 				// in case of blocking commands that did not processed entries we don't really account it
 				if dp.processedEntries > 0 {
 					latencies.RecordValue(dp.durationMs)
 					latenciesTick.RecordValue(dp.durationMs)
-					currentCount++
+					currentMessageCount += uint64(dp.processedEntries)
 					for _, cmdType := range dp.commandsIssued {
 						cmdRateTick[cmdType]++
 					}
@@ -129,17 +133,20 @@ func updateCLI(tick *time.Ticker, c chan os.Signal, message_limit uint64, loop b
 			}
 		case <-tick.C:
 			{
-				totalCommands += currentCount
+				totalCommands += currentCommandCount
+				totalMessages += currentMessageCount
 				totalErrors += currentErr
 				currentErr = 0
-				currentCount = 0
+				currentCommandCount = 0
+				currentMessageCount = 0
 				now := time.Now()
 				took := now.Sub(prevTime)
-				messageRate := float64(totalCommands-prevMessageCount) / float64(took.Seconds())
+				commandRate := float64(totalCommands-prevCommandCount) / float64(took.Seconds())
+				messageRate := float64(totalMessages-prevMessageCount) / float64(took.Seconds())
 				completionPercentStr := "[----%]"
 				errorPercentStr := "[----%]"
 				if !loop {
-					completionPercent := float64(totalCommands) / float64(message_limit) * 100.0
+					completionPercent := float64(totalMessages) / float64(message_limit) * 100.0
 					completionPercentStr = fmt.Sprintf("[%3.1f%%]", completionPercent)
 				}
 				if totalCommands > 0 {
@@ -149,10 +156,10 @@ func updateCLI(tick *time.Ticker, c chan os.Signal, message_limit uint64, loop b
 
 				p50 := float64(latencies.ValueAtQuantile(50.0)) / 1000.0
 
-				if prevMessageCount == 0 && totalCommands != 0 {
+				if prevMessageCount == 0 && totalMessages != 0 {
 					start = time.Now()
 				}
-				if totalCommands != 0 {
+				if totalMessages != 0 {
 					messageRateTs = append(messageRateTs, messageRate)
 					_, perTickLatencies := generateLatenciesMap(latenciesTick, took)
 					percentilesTs = append(percentilesTs, perTickLatencies)
@@ -166,14 +173,15 @@ func updateCLI(tick *time.Ticker, c chan os.Signal, message_limit uint64, loop b
 					cmdRateTick[pos] = 0
 				}
 
-				prevMessageCount = totalCommands
+				prevMessageCount = totalMessages
+				prevCommandCount = totalCommands
 				prevTime = now
 
-				fmt.Printf("%25.0fs %s %25d %25d %s %25.2f %25.2f\t", time.Since(start).Seconds(), completionPercentStr, totalCommands, totalErrors, errorPercentStr, messageRate, p50)
+				fmt.Printf("%25.0fs %s %25d %25d %25d  %s %25.2f %25.2f %25.2f\t", time.Since(start).Seconds(), completionPercentStr, totalCommands, totalMessages, totalErrors, errorPercentStr, commandRate, messageRate, p50)
 				fmt.Printf("\r")
 				//w.Flush()
-				if message_limit > 0 && totalCommands >= uint64(message_limit) && !loop {
-					return true, start, time.Since(start), totalCommands, messageRateTs, percentilesTs, cmdRateTs
+				if message_limit > 0 && totalMessages >= uint64(message_limit) && !loop {
+					return true, start, time.Since(start), totalMessages, messageRateTs, percentilesTs, cmdRateTs
 				}
 
 				break
@@ -181,7 +189,7 @@ func updateCLI(tick *time.Ticker, c chan os.Signal, message_limit uint64, loop b
 
 		case <-c:
 			fmt.Println("\nreceived Ctrl-c - shutting down")
-			return true, start, time.Since(start), totalCommands, messageRateTs, percentilesTs, cmdRateTs
+			return true, start, time.Since(start), totalMessages, messageRateTs, percentilesTs, cmdRateTs
 		}
 	}
 }

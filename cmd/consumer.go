@@ -11,6 +11,7 @@ import (
 	"github.com/rueian/rueidis"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
+	"golang.org/x/time/rate"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
@@ -46,6 +47,8 @@ var consumerCmd = &cobra.Command{
 		betweenClientsDelay, _ := cmd.Flags().GetDuration("between-clients-duration")
 		clientKeepAlive, _ := cmd.Flags().GetDuration("client-keep-alive-time")
 		pprofPort, _ := cmd.Flags().GetInt64("pprof-port")
+		rps, _ := cmd.Flags().GetInt("rps")
+		rpsBurst, _ := cmd.Flags().GetInt("rps-burst")
 
 		ctx := context.Background()
 		ips := resolveHostnames(nameserver, host, ctx)
@@ -57,6 +60,23 @@ var consumerCmd = &cobra.Command{
 			http.ListenAndServe(fmt.Sprintf(":%d", pprofPort), nil)
 		}()
 		fmt.Printf("Using random seed: %d\n", seed)
+
+		var requestRate = Inf
+		var requestBurst = rps
+		useRateLimiter := false
+		if rps != 0 {
+			requestRate = rate.Limit(rps)
+			useRateLimiter = true
+			if rpsBurst != 0 {
+				requestBurst = rpsBurst
+			}
+		} else {
+			if readBlockMs < 0 {
+				fmt.Printf("Given you haven't specified a rate of messages/sec and the \"--stream-read-block-ms\" value is also < 0 this means you'll be stressing the server to the highest capacity. Be aware that this will influence the producer side as well!\n")
+			}
+		}
+
+		var rateLimiter = rate.NewLimiter(requestRate, requestBurst)
 
 		client_update_tick := 1
 		latencies = hdrhistogram.New(1, 90000000, 3)
@@ -124,7 +144,7 @@ var consumerCmd = &cobra.Command{
 			for consumerId := 1; uint64(consumerId) <= uint64(consumersForStream); consumerId++ {
 				consumername := fmt.Sprintf("streamconsumer:%s:%d", groupname, consumerId)
 				wg.Add(1)
-				go benchmarkConsumerRoutine(client, c, datapointsChan, &wg, keyname, groupname, consumername, readBlockMs, readCount)
+				go benchmarkConsumerRoutine(client, c, datapointsChan, &wg, keyname, groupname, consumername, readBlockMs, readCount, useRateLimiter, rateLimiter)
 				bar.Add(1)
 			}
 
@@ -166,9 +186,11 @@ var consumerCmd = &cobra.Command{
 	},
 }
 
-func benchmarkConsumerRoutine(client rueidis.Client, c chan os.Signal, datapointsChan chan datapoint, wg *sync.WaitGroup, keyname, groupname, consumername string, readBlockMs, readCount int64) {
+func benchmarkConsumerRoutine(client rueidis.Client, c chan os.Signal, datapointsChan chan datapoint, wg *sync.WaitGroup, keyname, groupname, consumername string, readBlockMs, readCount int64, useRateLimiter bool, rateLimiter *rate.Limiter) {
 	defer wg.Done()
 	ctx := context.Background()
+	var startT time.Time
+	var endT time.Time
 
 	for {
 		select {
@@ -179,16 +201,26 @@ func benchmarkConsumerRoutine(client rueidis.Client, c chan os.Signal, datapoint
 			cmdsIssued := make([]int, 0, 1)
 			cmdsIssued = append(cmdsIssued, XREADGROUP)
 			processedEntries := 0
-			startT := time.Now()
-			xreadEntries, err := client.Do(ctx, client.B().Xreadgroup().Group(groupname, consumername).Count(readCount).Block(readBlockMs).Streams().Key(keyname).Id(">").Build()).AsXRead()
+			if useRateLimiter {
+				r := rateLimiter.ReserveN(time.Now(), int(1))
+				time.Sleep(r.Delay())
+			}
+			startT = time.Now()
+			res := client.Do(ctx, getXreadGroupCmd(client, groupname, consumername, readCount, readBlockMs, keyname))
+			endT = time.Now()
+			xreadEntries, err := res.AsXRead()
+
 			if err != nil {
-				cmdsIssued = append(cmdsIssued, XGROUPCREATE)
-				cmdsIssued = append(cmdsIssued, XGROUPCREATECONSUMER)
-				cmdsIssued = append(cmdsIssued, XREADGROUP)
-				err = client.Do(ctx, client.B().XgroupCreate().Key(keyname).Group(groupname).Id("0").Mkstream().Build()).Error()
-				err = client.Do(ctx, client.B().XgroupCreateconsumer().Key(keyname).Group(groupname).Consumer(consumername).Build()).Error()
-				startT = time.Now()
-				xreadEntries, err = client.Do(ctx, client.B().Xreadgroup().Group(groupname, consumername).Count(readCount).Block(readBlockMs).Streams().Key(keyname).Id(">").Build()).AsXRead()
+				if err != rueidis.Nil {
+					cmdsIssued = append(cmdsIssued, XGROUPCREATE)
+					cmdsIssued = append(cmdsIssued, XGROUPCREATECONSUMER)
+					cmdsIssued = append(cmdsIssued, XREADGROUP)
+					err = client.Do(ctx, client.B().XgroupCreate().Key(keyname).Group(groupname).Id("0").Mkstream().Build()).Error()
+					err = client.Do(ctx, client.B().XgroupCreateconsumer().Key(keyname).Group(groupname).Consumer(consumername).Build()).Error()
+					startT = time.Now()
+					xreadEntries, err = client.Do(ctx, getXreadGroupCmd(client, groupname, consumername, readCount, readBlockMs, keyname)).AsXRead()
+					endT = time.Now()
+				}
 			}
 			if err == nil {
 				xrangeEntries, found := xreadEntries[keyname]
@@ -200,16 +232,24 @@ func benchmarkConsumerRoutine(client rueidis.Client, c chan os.Signal, datapoint
 					}
 				}
 			}
-			endT := time.Now()
 			duration := endT.Sub(startT)
-			datapointsChan <- datapoint{!(err != nil), duration.Microseconds(), cmdsIssued, processedEntries}
+			datapointsChan <- datapoint{(err == nil || (err != nil && err == rueidis.Nil)), duration.Microseconds(), cmdsIssued, processedEntries}
 		}
 	}
 }
 
+func getXreadGroupCmd(client rueidis.Client, groupname string, consumername string, readCount int64, readBlockMs int64, keyname string) rueidis.Completed {
+	cmd := client.B().Xreadgroup().Group(groupname, consumername).Count(readCount)
+	if readBlockMs >= 0 {
+		cmd.Block(readBlockMs)
+	}
+	xreadGroupCompletedCmd := cmd.Streams().Key(keyname).Id(">")
+	return xreadGroupCompletedCmd.Build()
+}
+
 func init() {
 	rootCmd.AddCommand(consumerCmd)
-	consumerCmd.PersistentFlags().Int64("stream-read-block-ms", 30000, "Block the client for this amount of milliseconds.")
+	consumerCmd.PersistentFlags().Int64("stream-read-block-ms", -1, "Block the client for this amount of milliseconds. If 0 will return immediatelly.")
 	consumerCmd.PersistentFlags().Uint64("consumers-per-stream-min", 5, "per stream consumer count min.")
 	consumerCmd.PersistentFlags().Uint64("consumers-per-stream-max", 50, "per stream consumer count max.")
 	consumerCmd.PersistentFlags().Int64("stream-read-count", 1, "per command count of messages to be read.")

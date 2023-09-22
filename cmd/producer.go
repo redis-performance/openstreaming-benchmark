@@ -21,6 +21,7 @@ import (
 )
 
 var totalCommands uint64
+var totalMessages uint64
 var totalErrors uint64
 var latencies *hdrhistogram.Histogram
 var latenciesTick *hdrhistogram.Histogram
@@ -52,8 +53,8 @@ var producerCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		host, _ := cmd.Flags().GetString("h")
 		port, _ := cmd.Flags().GetInt("p")
-		rps, _ := cmd.Flags().GetInt("rps")
 		dataLen, _ := cmd.Flags().GetInt("d")
+		rps, _ := cmd.Flags().GetInt("rps")
 		rpsBurst, _ := cmd.Flags().GetInt("rps-burst")
 		numberRequests, _ := cmd.Flags().GetUint64("n")
 		streamMaxlen, _ := cmd.Flags().GetInt64("stream-maxlen")

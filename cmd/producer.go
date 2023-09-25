@@ -74,7 +74,8 @@ var producerCmd = &cobra.Command{
 		readBufferEachConn, _ := cmd.Flags().GetInt("read-buffer-each-conn")
 		writeBufferEachConn, _ := cmd.Flags().GetInt("write-buffer-each-conn")
 		pprofPort, _ := cmd.Flags().GetInt64("pprof-port")
-
+		waitReplicas, _ := cmd.Flags().GetInt("wait-replicas")
+		waitReplicasMs, _ := cmd.Flags().GetInt("wait-replicas-timeout-ms")
 		if nClients > uint64(keyspaceLen) {
 			log.Fatalf("The number of clients needs to be smaller or equal to the number of streams")
 		}
@@ -128,7 +129,7 @@ var producerCmd = &cobra.Command{
 			client := getClientWithOptions(connectionStr, auth, blockingPoolSize, readBufferEachConn, writeBufferEachConn, clientKeepAlive)
 			defer client.Close()
 
-			go benchmarkRoutine(client, streamPrefix, value, datapointsChan, samplesPerClient, &wg, useRateLimiter, rateLimiter, gen, randSource, streamMaxlen, streamMaxlenExpireSeconds, loop)
+			go benchmarkRoutine(client, streamPrefix, value, datapointsChan, samplesPerClient, &wg, useRateLimiter, rateLimiter, gen, randSource, streamMaxlen, streamMaxlenExpireSeconds, loop, waitReplicas, waitReplicasMs)
 
 			// delay the creation for each additional client
 			time.Sleep(betweenClientsDelay)
@@ -170,7 +171,7 @@ var producerCmd = &cobra.Command{
 	},
 }
 
-func benchmarkRoutine(client rueidis.Client, streamPrefix, value string, datapointsChan chan datapoint, samplesPerClient uint64, wg *sync.WaitGroup, useRateLimiter bool, rateLimiter *rate.Limiter, gen *generator.Zipfian, randSource *rand.Rand, streamMaxlen int64, streamMaxlenExpireSeconds int64, loop bool) {
+func benchmarkRoutine(client rueidis.Client, streamPrefix, value string, datapointsChan chan datapoint, samplesPerClient uint64, wg *sync.WaitGroup, useRateLimiter bool, rateLimiter *rate.Limiter, gen *generator.Zipfian, randSource *rand.Rand, streamMaxlen int64, streamMaxlenExpireSeconds int64, loop bool, waitReplicas, waitReplicasMs int) {
 	streamMessages := make(map[int64]int64, 0)
 	defer wg.Done()
 	for i := 0; uint64(i) < samplesPerClient || loop; i++ {
@@ -219,9 +220,21 @@ func benchmarkRoutine(client rueidis.Client, streamPrefix, value string, datapoi
 		counter = counter + 1
 		cmdsIssued = append(cmdsIssued, XADD)
 		streamEntry := fmt.Sprintf("%d", counter)
-		startT := time.Now()
-		err = client.Do(ctx, client.B().Xadd().Key(keyname).Id(streamEntry).FieldValue().FieldValue("field", value).Build()).Error()
-		endT := time.Now()
+		var startT time.Time
+		var endT time.Time
+		if waitReplicas > 0 {
+			cmds := make(rueidis.Commands, 0, 2)
+			cmds = append(cmds, client.B().Xadd().Key(keyname).Id(streamEntry).FieldValue().FieldValue("field", value).Build())
+			cmds = append(cmds, client.B().Wait().Numreplicas(int64(waitReplicas)).Timeout(int64(waitReplicasMs)).Build())
+			startT = time.Now()
+			res := client.DoMulti(ctx, cmds...)
+			endT = time.Now()
+			err = res[0].Error()
+		} else {
+			startT = time.Now()
+			err = client.Do(ctx, client.B().Xadd().Key(keyname).Id(streamEntry).FieldValue().FieldValue("field", value).Build()).Error()
+			endT = time.Now()
+		}
 		duration := endT.Sub(startT)
 		streamMessages[streamId] = counter
 		datapointsChan <- datapoint{!(err != nil), duration.Microseconds(), cmdsIssued, 1}
@@ -230,4 +243,6 @@ func benchmarkRoutine(client rueidis.Client, streamPrefix, value string, datapoi
 
 func init() {
 	rootCmd.AddCommand(producerCmd)
+	producerCmd.PersistentFlags().Int("wait-replicas", 0, "If larger than 0 will wait for the specified number of replicas.")
+	producerCmd.PersistentFlags().Int("wait-replicas-timeout-ms", 1000, "WAIT timeout when used together with -wait-replicas.")
 }

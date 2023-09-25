@@ -14,6 +14,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -72,6 +73,7 @@ var producerCmd = &cobra.Command{
 		loop, _ := cmd.Flags().GetBool("loop")
 		readBufferEachConn, _ := cmd.Flags().GetInt("read-buffer-each-conn")
 		writeBufferEachConn, _ := cmd.Flags().GetInt("write-buffer-each-conn")
+		pprofPort, _ := cmd.Flags().GetInt64("pprof-port")
 
 		if nClients > uint64(keyspaceLen) {
 			log.Fatalf("The number of clients needs to be smaller or equal to the number of streams")
@@ -82,6 +84,10 @@ var producerCmd = &cobra.Command{
 
 		// a WaitGroup for the goroutines to tell us they've stopped
 		wg := sync.WaitGroup{}
+
+		go func() {
+			http.ListenAndServe(fmt.Sprintf(":%d", pprofPort), nil)
+		}()
 
 		fmt.Printf("Using random seed: %d. Each client will have seed of %d+<client id>\n", seed, seed)
 

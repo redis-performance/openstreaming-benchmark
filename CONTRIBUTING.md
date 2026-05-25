@@ -4,14 +4,16 @@ We treat this repo as "Open Source" within Redis: anyone who clears the bar belo
 
 ## Local setup
 
-<!-- TODO: fill in repo-specific setup steps -->
-
 ```bash
-# Example — replace with actual steps
-git clone git@github.com:redis-performance/<repo>.git
-cd <repo>
-# install dependencies, build, etc.
+git clone git@github.com:redis-performance/openstreaming-benchmark.git
+cd openstreaming-benchmark
+go get -t -v ./...
+make build
 ```
+
+The binary is written to `./openstreaming-benchmark` in the repo root.
+
+Requires **Go 1.19+** (see `go.mod`). No other runtime dependencies — the tool connects to an already-running Redis or compatible streaming backend at test time.
 
 ## Branch naming
 
@@ -42,10 +44,27 @@ Example: `feat/add-pipeline-mode`
 - Existing tests must pass: run the test suite locally before opening a PR.
 - Coverage should not decrease.
 
-<!-- TODO: add the exact test command for this repo -->
+Run the full test suite with:
+
+```bash
+make test
+```
+
+This is equivalent to:
+
+```bash
+GO111MODULE=on go fmt ./...
+GO111MODULE=on go test -race -covermode=atomic ./...
+```
+
+To generate a coverage report:
+
+```bash
+make coverage
+```
 
 ## Review process
 
 - At least one maintainer approval is required before merge.
 - CI must be green.
-- Maintainers may request changes or close PRs that don't meet the bar — this is normal and not personal.
+- Maintainers may request changes or close PRs that do not meet the bar — this is normal and not personal.

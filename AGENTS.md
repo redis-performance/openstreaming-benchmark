@@ -4,17 +4,18 @@ Instructions for AI coding agents (Claude Code, Copilot, Cursor, etc.) working i
 
 ## Project overview
 
-<!-- TODO: one paragraph describing what this repo does -->
+`openstreaming-benchmark` is a Go CLI tool that makes it easy to benchmark distributed streaming systems. It drives concurrent producer and consumer workloads against a target (e.g. Redis Streams), measures throughput and latency using HDR histograms, and reports results in a structured format. The project is rated **5 stars** for importance: it is the canonical performance reference for Redis streaming use-cases and is used directly by the Redis Performance team.
 
 ## Local setup
 
-<!-- TODO: mirror the setup steps from CONTRIBUTING.md -->
-
 ```bash
-# Example
-git clone git@github.com:redis-performance/<repo>.git
-cd <repo>
+git clone git@github.com:redis-performance/openstreaming-benchmark.git
+cd openstreaming-benchmark
+go get -t -v ./...
+make build
 ```
+
+The compiled binary lands at `./openstreaming-benchmark` in the repo root. Requires **Go 1.19+** (see `go.mod`). No other runtime dependencies — connect the tool to an already-running Redis or compatible streaming backend at test time.
 
 ## Branch naming
 
@@ -29,11 +30,23 @@ Same as human contributors: `<type>/<short-description>` (e.g. `fix/off-by-one-i
 
 ## Running tests
 
-<!-- TODO: exact command to run tests -->
+Run the full test suite before declaring a task complete:
 
 ```bash
-# Example
 make test
+```
+
+This formats all Go source files and then runs every test with the race detector enabled:
+
+```bash
+GO111MODULE=on go fmt ./...
+GO111MODULE=on go test -race -covermode=atomic ./...
+```
+
+To produce a coverage report:
+
+```bash
+make coverage
 ```
 
 Always run tests before declaring a task complete.
